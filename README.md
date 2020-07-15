@@ -1,6 +1,6 @@
 # End-to-End-Transition-Based-Online-Dialogue-Disentanglement
 
-Source code and dataset for the IJCAI 2020 paper "End-to-End Transition-Based Online Dialogue Disentanglement", which aims to solve the problem of dialogue disentanglement in an end-to-end manner. This work achieves better results comparing with all the previous methods, which mostly adopt a two-step architecture. 
+Source code and dataset for the IJCAI 2020 paper "End-to-End Transition-Based Online Dialogue Disentanglement", which aims to solve the problem of dialogue disentanglement in an end-to-end manner. This work achieves better results comparing with all the previous methods, which mostly adopt a two-step architecture. You can download the paper from [here](https://www.ijcai.org/proceedings/2020/0535.pdf).
 
 ## Dataset
 
