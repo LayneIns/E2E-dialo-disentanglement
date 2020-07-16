@@ -174,13 +174,6 @@ class StateMatrixEncoder(nn.Module):
                             one_res.append(state_matrix[batch_index][j-1][j].unsqueeze(0))
                 one_res = torch.cat(one_res, dim=0)
                 state_matrix[batch_index][i][0] =self.pooling(one_res.unsqueeze(0))[0][0]
-        # pooling_res = self.pooling(state_matrix[:, :, 1:, :])
-        # print(pooling_res.size())
-        # for batch_index in range(batch_size):
-        #     for i in range(max_conversation_length):
-        #         if state_transition_matrix[batch_index][i][0] == 0:
-        #             state_matrix[batch_index][i][0] =self.pooling(state_matrix[:, :, 1:, :])[batch_index][i][0]
-        # print(state_matrix[0][0])
         return state_matrix
     
     def forward(self, utterance_repre, conversation_repre, session_repre, \
@@ -189,13 +182,11 @@ class StateMatrixEncoder(nn.Module):
         # conversation_repre: [batch_size, max_conversation_length, hidden_size]
         # session_repre: [batch_size, 4, max_session_length, hidden_size]
         batch_size, _, hidden_size = utterance_repre.size()
-        # state_matrix = torch.randn([batch_size, max_conversation_length, 5, hidden_size])
         shape = torch.Size([batch_size, max_conversation_length, 5, hidden_size])
         if torch.cuda.is_available():
             state_matrix = torch.cuda.FloatTensor(shape).zero_()
         else:
             state_matrix = torch.FloatTensor(shape).zero_()
-        # state_matrix = torch.randn(shape, out=state_matrix)
         state_matrix = self.build_state_matrix(state_matrix, session_repre, state_transition_matrix, \
                                                     batch_size, max_conversation_length)
         return state_matrix
@@ -220,9 +211,7 @@ class ScoresCalculator(nn.Module):
         utterance_projected = self.utterance_projection(utterance_concat)
         # [batch_size, max_conversation_length, hidden_size]
 
-        # scores = torch.matmul(utterance_repre.unsqueeze(2), state_matrix.permute(0,1,3,2)).squeeze(2)
         scores = torch.matmul(state_matrix, utterance_projected.unsqueeze(3)).squeeze()
-        # scores: [batch_size, max_conversation_length, 5]
         softmax_masked_scores = self.softmax_func(scores)
 
         return softmax_masked_scores

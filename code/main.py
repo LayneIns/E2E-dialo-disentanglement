@@ -122,7 +122,6 @@ def test(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    # parser.add_argument('--input', type=str, required=True)
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--input_path', type=str, default=None)
     parser.add_argument('--save_input', action='store_true', 
