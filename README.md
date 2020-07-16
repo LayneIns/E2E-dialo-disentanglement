@@ -7,8 +7,8 @@ Source code and dataset for the IJCAI 2020 paper "End-to-End Transition-Based On
 Our proposed Movie Dialogue Dataset is contained in the ``data/`` folder. 
 The format of each sample is as:
 
-	[["speaker": "xxx", "utterance": "xxx", "dialogue_id": "xx", "section_id": "xx", "label": "x"], 
-	 ["speaker": "xxx", "utterance": "xxx", "dialogue_id": "xx", "section_id": "xx", "label": "x"] ... ]
+	[["speaker": "xxx", "utterance": "xxx", "label": "x"], 
+	 ["speaker": "xxx", "utterance": "xxx", "label": "x"] ... ]
 
 For each utterance, "speaker" indicates the speaker of the utterance (which is not used in this work), and "utterance" is the content of the current utterance. "label" indicates which session the current utterance belongs to.
 
