@@ -22,7 +22,7 @@ You can train the model by the following command:
 
 	python main.py --mode train --input_path [path of the data] --device [cpu or gpu index]
 
-After train the model, the test command is as:
+After training the model, the test command is:
 
 	python main.py --mode test --input_path [path of the data] --model_path [path to the model you want to test] --device [cpu or gpu index]
 
