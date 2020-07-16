@@ -4,7 +4,7 @@ Source code and dataset for the IJCAI 2020 paper "End-to-End Transition-Based On
 
 ## Dataset
 
-Our proposed Movie Dialogue Dataset is contained in the ``data/`` folder. 
+Our proposed Movie Dialogue Dataset is contained in the ``dataset/`` folder. 
 The format of each sample is as:
 
 	[["speaker": "xxx", "utterance": "xxx", "label": "x"], 
