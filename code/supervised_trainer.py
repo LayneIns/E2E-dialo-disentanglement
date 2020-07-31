@@ -14,13 +14,20 @@ import utils
 
 
 class SupervisedTrainer(object):
-    def __init__(self, ensemble_model, logger=None, current_time=None, loss=F.nll_loss, optimizer=None):
+    def __init__(self, args, ensemble_model, teacher_model=None, logger=None, current_time=None, loss=nn.KLDivLoss, optimizer=None):
+        self.args = args
         self.ensemble_model = ensemble_model
+        self.teacher_model = teacher_model
         self.logger = logger
         self.current_time = current_time
-        self.loss_func = loss
+        self.loss_func = loss(reduction='batchmean')
         if optimizer == None:
-            params = list(self.ensemble_model.parameters())
+            if self.args.model == 'T':
+                params = list(self.teacher_model.parameters())
+            elif self.args.model == 'S':
+                params = list(self.ensemble_model.parameters())
+            elif self.args.model == 'TS':
+                params = list(self.ensemble_model.parameters())
             self.optimizer = optim.Adam(params, lr=constant.learning_rate)
         else:
             self.optimizer = optimizer
@@ -35,51 +42,97 @@ class SupervisedTrainer(object):
         loss = torch.sum(loss)/len(input_)
         return loss
 
-    def _train_batch(self, batch):
+    def _train_batch(self, batch, noise_batch):
         batch_utterances, label_for_loss, labels, utterance_sequence_length, \
                     session_transpose_matrix, state_transition_matrix, session_sequence_length, \
                         max_conversation_length, loss_mask = batch
-        softmax_masked_scores = self.ensemble_model(batch)
-        # [batch_size, max_conversation_length, 5]
+        if self.args.model == 'TS':
+            if self.args.add_noise:
+                softmax_masked_scores = self.ensemble_model(noise_batch)
+            else:
+                softmax_masked_scores = self.ensemble_model(batch)
+            teacher_scores, teacher_log_scores = self.teacher_model(batch)
+            # [batch_size, max_conversation_length, 5]
+            loss_kl = self.loss_func(softmax_masked_scores, teacher_scores)
+            loss_1 = self.calculate_loss(softmax_masked_scores, label_for_loss, loss_mask)
+            loss_2 = self.calculate_loss(teacher_log_scores, label_for_loss, loss_mask)
+            loss = loss_1 + loss_kl
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            return loss_1.data.item(), loss_2.data.item(), loss_kl.data.item(), len(batch_utterances), sum(sum(session_sequence_length))
+        if self.args.model == 'S':
+            if self.args.add_noise:
+                softmax_masked_scores = self.ensemble_model(noise_batch)
+            else:
+                softmax_masked_scores = self.ensemble_model(batch)
+            # [batch_size, max_conversation_length, 5]
+            loss_1 = self.calculate_loss(softmax_masked_scores, label_for_loss, loss_mask)
+            loss = loss_1
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            return loss_1.data.item(), 0, 0, len(batch_utterances), sum(sum(session_sequence_length))
+        if self.args.model == 'T':
+            if self.args.add_noise:
+                teacher_scores, teacher_log_scores = self.teacher_model(noise_batch)
+            else:
+                teacher_scores, teacher_log_scores = self.teacher_model(batch)
+            loss_2 = self.calculate_loss(teacher_log_scores, label_for_loss, loss_mask)
+            loss = loss_2
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
+            return 0, loss_2.data.item(), 0, len(batch_utterances), sum(sum(session_sequence_length))
 
-        loss = self.calculate_loss(softmax_masked_scores, label_for_loss, loss_mask)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-
-        return loss.data.item(), len(batch_utterances), sum(sum(session_sequence_length))
-
-    def train(self, train_loader, dev_loader):
+    def train(self, train_loader, noise_train_loader, dev_loader):
         step_cnt = 0
         for epoch in range(constant.epoch_num):
             epoch_loss = 0
             for i, batch in enumerate(train_loader):
                 step_cnt += 1
-                loss, batch_size, uttr_cnt = self._train_batch(batch)
-                epoch_loss += loss
-                log_msg = "Epoch : {}, batch: {}/{}, step: {}, batch avg loss: {}, uttr avg loss: {}".format(
-                                        epoch, i, len(train_loader), step_cnt, round(loss, 4), round(loss*batch_size/uttr_cnt, 4))
+                if self.args.add_noise:
+                    noise_batch = noise_train_loader[i]
+                else:
+                    noise_batch = None
+                loss_student, loss_teacher, loss_kl, batch_size, uttr_cnt = self._train_batch(batch, noise_batch)
+                # loss_student, batch_size, uttr_cnt = self._train_batch(batch)
+                if self.args.model == 'T':
+                    epoch_loss += loss_teacher
+                else:
+                    epoch_loss += loss_student
+                log_msg = "Epoch : {}, batch: {}/{}, step: {}, batch student loss: {}, teacher loss: {}, kl loss: {}, uttr avg loss: {}".format(
+                                        epoch, i, len(train_loader), step_cnt, round(loss_student, 4), round(loss_teacher, 4), round(loss_kl, 4), round(loss_student*batch_size/uttr_cnt, 4))
+                # log_msg = "Epoch : {}, batch: {}/{}, step: {}, batch student loss: {}, uttr avg loss: {}".format(
+                                        # epoch, i, len(train_loader), step_cnt, round(loss_student, 4), round(loss_student*batch_size/uttr_cnt, 4))
                 self.logger.info(log_msg)
                 if step_cnt % constant.inference_step == 0:
-                # if step_cnt % 2 == 0:
-                    purity_score, nmi_score, ari_score, shen_f_score = self.evaluate(dev_loader, step_cnt)
-                    log_msg = "purity_score: {}, nmi_score: {}, ari_score: {}, shen_f_score: {}".format(
-                        round(purity_score, 4), round(nmi_score, 4), round(ari_score, 4), round(shen_f_score, 4))
-                    self.logger.info(log_msg)
-
-                    model_name = os.path.join(constant.save_model_path, "model_{}".format(self.current_time), \
+                    if self.args.model == "T":
+                        model_name = os.path.join(constant.save_model_path, "model_{}".format(self.current_time), \
                                                     "step_{}.pkl".format(step_cnt))
-                    log_msg = "Saving model for step {} at '{}'".format(step_cnt, model_name)
-                    self.logger.info(log_msg)
-                    torch.save(self.ensemble_model.state_dict(), model_name)
+                        torch.save(self.teacher_model.state_dict(), model_name)
+                    else:
+                        purity_score, nmi_score, ari_score, shen_f_score = self.evaluate(dev_loader, step_cnt)
+                        log_msg = "purity_score: {}, nmi_score: {}, ari_score: {}, shen_f_score: {}".format(
+                            round(purity_score, 4), round(nmi_score, 4), round(ari_score, 4), round(shen_f_score, 4))
+                        self.logger.info(log_msg)
+
+                        model_name = os.path.join(constant.save_model_path, "model_{}".format(self.current_time), \
+                                                        "step_{}.pkl".format(step_cnt))
+                        log_msg = "Saving model for step {} at '{}'".format(step_cnt, model_name)
+                        self.logger.info(log_msg)
+                        torch.save(self.ensemble_model.state_dict(), model_name)
 
             log_msg = "Epoch average loss is: {}".format(round(epoch_loss/len(train_loader), 4))
             self.logger.info(log_msg)
 
-    def init_state(self, batch_index, j, state, hidden_state_history, utterance_repre, predicted_batch_label, mask):
+    def init_state(self, batch_index, j, state, hidden_state_history, utterance_repre, conversation_repre, predicted_batch_label, mask):
         # state : [5, constant.hidden_size]
         if j == 0:
-            state[0] = self.ensemble_model.state_matrix_encoder.pooling(state[1:, :].unsqueeze(0))[0][0]
+            one_res = self.ensemble_model.state_matrix_encoder.pooling(state[1:, :].unsqueeze(0))[0][0]
+            state[0] = self.ensemble_model.state_matrix_encoder.new_state_projection(
+                torch.cat([one_res, conversation_repre[batch_index][j]])
+            )
         else:
             label = predicted_batch_label[-1]
             if label == 0:
@@ -93,7 +146,10 @@ class SupervisedTrainer(object):
                 # new_output: [1, 1, hidden_size]
             state[position] = new_output.squeeze()
             hidden_state_history[position] = new_hidden
-            state[0] = self.ensemble_model.state_matrix_encoder.pooling(state[1:, :].unsqueeze(0))[0][0]
+            one_res = self.ensemble_model.state_matrix_encoder.pooling(state[1:, :].unsqueeze(0))[0][0]
+            state[0] = self.ensemble_model.state_matrix_encoder.new_state_projection(
+                torch.cat([one_res, conversation_repre[batch_index][j-1]])
+            )
         return state, mask, hidden_state_history
     
     def predict(self, batch_index, j, state, utterance_repre, conversation_repre, mask):
@@ -127,19 +183,22 @@ class SupervisedTrainer(object):
         predicted_labels = []
         for batch_index in range(len(conversation_length_list)):
             predicted_batch_label = []
-            shape = torch.Size([5, constant.hidden_size])
+            shape = torch.Size([constant.state_num, constant.hidden_size])
             if torch.cuda.is_available():
                 state = torch.cuda.FloatTensor(shape).zero_()
             else:
                 state = torch.FloatTensor(shape).zero_()
             # state = torch.randn([5, constant.hidden_size])
             if torch.cuda.is_available():
-                mask = torch.cuda.LongTensor([0., -1., -1., -1., -1.]).type(torch.double)
+                mask = [0.] + [-1.] * (constant.state_num-1)
+                mask = torch.cuda.LongTensor(mask).type(torch.double)
             else:
-                mask = torch.LongTensor([0., -1., -1., -1., -1.]).type(torch.double)
-            hidden_state_history = {1: None, 2: None, 3:None, 4: None}
+                mask = [0.] + [-1.] * (constant.state_num-1)
+                mask = torch.LongTensor(mask).type(torch.double)
+            # hidden_state_history = {1: None, 2: None, 3:None, 4: None}
+            hidden_state_history = {i + 1: None for i in range(constant.state_num-1)}
             for j in range(conversation_length_list[batch_index]):
-                state, mask, hidden_state_history = self.init_state(batch_index, j, state, hidden_state_history, utterance_repre, predicted_batch_label, mask)
+                state, mask, hidden_state_history = self.init_state(batch_index, j, state, hidden_state_history, utterance_repre, conversation_repre, predicted_batch_label, mask)
                 label = self.predict(batch_index, j, state, utterance_repre, conversation_repre, mask)
                 predicted_batch_label.append(label)
                 # print("{}-{}: label: {}, {}".format(batch_index, j, label, mask.cpu().tolist()))

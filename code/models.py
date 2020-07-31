@@ -10,15 +10,18 @@ import constant
 
 
 class EnsembleModel(nn.Module):
-    def __init__(self, utterance_encoder, attentive_encoder, conversation_encoder, session_encoder, \
-                    state_matrix_encoder, scores_calculator):
+    def __init__(self, word_dict, word_emb=None, bidirectional=False):
         super(EnsembleModel, self).__init__()
-        self.utterance_encoder = utterance_encoder
-        self.attentive_encoder = attentive_encoder
-        self.conversation_encoder = conversation_encoder
-        self.session_encoder = session_encoder
-        self.state_matrix_encoder = state_matrix_encoder
-        self.scores_calculator = scores_calculator
+        self.utterance_encoder = UtteranceEncoder(word_dict, word_emb=word_emb, bidirectional=bidirectional, \
+                                            n_layers=1, input_dropout=0, dropout=0, rnn_cell='lstm')
+        self.attentive_encoder = SelfAttentiveEncoder()
+        self.conversation_encoder = ConversationEncoder(bidirectional=bidirectional, n_layers=1, dropout=0, rnn_cell='lstm')
+        self.session_encoder = SessionEncoder(bidirectional=bidirectional, n_layers=1, dropout=0, rnn_cell='lstm')
+        self.state_matrix_encoder = StateMatrixEncoder()
+        if bidirectional:
+            self.scores_calculator = ScoresCalculator(softmax_func=nn.Softmax, teacher=True)
+        else:
+            self.scores_calculator = ScoresCalculator(softmax_func=nn.LogSoftmax)
     
     def forward(self, batch):
         batch_utterances, label_for_loss, labels, utterance_sequence_length, \
@@ -50,6 +53,7 @@ class UtteranceEncoder(nn.Module):
         # self.bidirectional = bidirectional
         # self.n_layers = n_layers
         self.input_dropout = nn.Dropout(p=input_dropout)
+        self.bidirectional = bidirectional
         
         # bi = 2 if self.bidirectional else 1
         if rnn_cell == 'lstm':
@@ -58,6 +62,11 @@ class UtteranceEncoder(nn.Module):
         elif rnn_cell == 'gru':
             self.encoder = nn.GRU(constant.embedding_size, constant.hidden_size, n_layers, batch_first=True, \
                                         bidirectional=bidirectional, dropout=dropout)
+        if self.bidirectional:
+            self.bidirectional_projection = nn.Sequential(
+                nn.Linear(constant.hidden_size*2, constant.hidden_size), 
+                nn.ReLU()
+            )
 
     def init_embedding(self):
         if self.word_emb is None:
@@ -73,6 +82,8 @@ class UtteranceEncoder(nn.Module):
         # embeded_input = self.input_dropout(embeded_input)
         word_output, _ = self.encoder(embeded_input)
         # word_output: [batch_size * max_conversation_length, max_utterance_length, hidden_size]
+        if self.bidirectional:
+            word_output = self.bidirectional_projection(word_output)
         return word_output, shape
 
 
@@ -107,31 +118,45 @@ class SelfAttentiveEncoder(nn.Module):
 
 
 class ConversationEncoder(nn.Module):
-    def __init__(self, bidirectional=False, n_layers=1, input_dropout=0, dropout=0, rnn_cell='lstm'):
+    def __init__(self, bidirectional=False, n_layers=1, dropout=0, rnn_cell='lstm'):
         super(ConversationEncoder, self).__init__()
+        self.bidirectional = bidirectional
         if rnn_cell == 'lstm':
             self.encoder = nn.LSTM(constant.hidden_size, constant.hidden_size, n_layers, batch_first=True, \
                                         bidirectional=bidirectional, dropout=dropout)
         elif rnn_cell == 'gru':
             self.encoder = nn.GRU(constant.hidden_size, constant.hidden_size, n_layers, batch_first=True, \
                                         bidirectional=bidirectional, dropout=dropout)
+        if self.bidirectional:
+            self.bidirectional_projection = nn.Sequential(
+                nn.Linear(constant.hidden_size*2, constant.hidden_size), 
+                nn.ReLU()
+            )
     
     def forward(self, input_var):
         # input_var: [batch_size, max_conversation_length, hidden_size]
         conv_output, _ = self.encoder(input_var)
         # conv_output: [batch_size, max_conversation_length, hidden_size]
+        if self.bidirectional:
+            conv_output = self.bidirectional_projection(conv_output)
         return conv_output
 
 
 class SessionEncoder(nn.Module):
-    def __init__(self, bidirectional=False, n_layers=1, input_dropout=0, dropout=0, rnn_cell='lstm'):
+    def __init__(self, bidirectional=False, n_layers=1, dropout=0, rnn_cell='lstm'):
         super(SessionEncoder, self).__init__()
+        self.bidirectional = bidirectional
         if rnn_cell == 'lstm':
             self.encoder = nn.LSTM(constant.hidden_size, constant.hidden_size, n_layers, batch_first=True, \
                                         bidirectional=bidirectional, dropout=dropout)
         elif rnn_cell == 'gru':
             self.encoder = nn.GRU(constant.hidden_size, constant.hidden_size, n_layers, batch_first=True, \
                                         bidirectional=bidirectional, dropout=dropout)
+        if self.bidirectional:
+            self.bidirectional_projection = nn.Sequential(
+                nn.Linear(constant.hidden_size*2, constant.hidden_size), 
+                nn.ReLU()
+            )
     
     def forward(self, input_var, transpose_matrix):
         # input_var: [batch_size, max_conversation_length, hidden_size]
@@ -139,11 +164,13 @@ class SessionEncoder(nn.Module):
         input_var = input_var.contiguous().view(-1, constant.hidden_size)
         input_var = input_var[transpose_matrix]
         # [batch_size * max_conversation_length, hidden_size]
-        input_var = input_var.view(-1, int(max_conversation_length/4), constant.hidden_size)
+        input_var = input_var.view(-1, int(max_conversation_length/(constant.state_num-1)), constant.hidden_size)
         # [batch_size * 4, max_session_length, hidden_size]
         output, _ = self.encoder(input_var)
+        if self.bidirectional:
+            output = self.bidirectional_projection(output)
         # output: [batch_size*4, max_session_length, hidden_size]
-        output = output.view(batch_size, 4, int(max_conversation_length/4), constant.hidden_size)
+        output = output.view(batch_size, constant.state_num-1, int(max_conversation_length/(constant.state_num-1)), constant.hidden_size)
         return output
 
 
@@ -154,9 +181,9 @@ class StateMatrixEncoder(nn.Module):
             nn.Linear(constant.hidden_size*2, constant.hidden_size), 
             nn.ReLU()
         )
-        self.pooling = pooling((4, 1))
+        self.pooling = pooling((constant.state_num-1, 1))
     
-    def build_state_matrix(self, state_matrix, session_repre, state_transition_matrix, \
+    def build_state_matrix(self, state_matrix, session_repre, conversation_repre, state_transition_matrix, \
                                     batch_size, max_conversation_length):
         # state_matrix: [batch_size, max_conversation_length, 5, hidden_size]
         # session_repre: [batch_size, 4, max_session_length, hidden_size]
@@ -164,16 +191,23 @@ class StateMatrixEncoder(nn.Module):
         for batch_index in range(batch_size):
             for i in range(max_conversation_length):
                 one_res = []
-                for j in range(5):
-                    if state_transition_matrix[batch_index][i][j] != 0:
+                for j in range(constant.state_num):
+                    if state_transition_matrix[batch_index][i][j] != -1:
                         if state_transition_matrix[batch_index][i][j] != 0:
                             position = state_transition_matrix[batch_index][i][j] - 1
                             state_matrix[batch_index][i][j] = session_repre[batch_index][j-1][position]
                             one_res.append(session_repre[batch_index][j-1][position].unsqueeze(0))
-                        else:
-                            one_res.append(state_matrix[batch_index][j-1][j].unsqueeze(0))
-                one_res = torch.cat(one_res, dim=0)
-                state_matrix[batch_index][i][0] =self.pooling(one_res.unsqueeze(0))[0][0]
+                    else:
+                        one_res.append(state_matrix[batch_index][i-1][j].unsqueeze(0))
+                one_res = self.pooling(torch.cat(one_res, dim=0).unsqueeze(0))[0][0]
+                # [hidden_size]
+                if i == 0:
+                    conversation_state = conversation_repre[batch_index][i]
+                else:
+                    conversation_state = conversation_repre[batch_index][i-1]
+                state_matrix[batch_index][i][0] = self.new_state_projection(
+                    torch.cat([one_res, conversation_state], dim=0)
+                )
         return state_matrix
     
     def forward(self, utterance_repre, conversation_repre, session_repre, \
@@ -182,20 +216,23 @@ class StateMatrixEncoder(nn.Module):
         # conversation_repre: [batch_size, max_conversation_length, hidden_size]
         # session_repre: [batch_size, 4, max_session_length, hidden_size]
         batch_size, _, hidden_size = utterance_repre.size()
-        shape = torch.Size([batch_size, max_conversation_length, 5, hidden_size])
+        # state_matrix = torch.randn([batch_size, max_conversation_length, 5, hidden_size])
+        shape = torch.Size([batch_size, max_conversation_length, constant.state_num, hidden_size])
         if torch.cuda.is_available():
             state_matrix = torch.cuda.FloatTensor(shape).zero_()
         else:
             state_matrix = torch.FloatTensor(shape).zero_()
-        state_matrix = self.build_state_matrix(state_matrix, session_repre, state_transition_matrix, \
+        # state_matrix = torch.randn(shape, out=state_matrix)
+        state_matrix = self.build_state_matrix(state_matrix, session_repre, conversation_repre, state_transition_matrix, \
                                                     batch_size, max_conversation_length)
         return state_matrix
 
 
 class ScoresCalculator(nn.Module):
-    def __init__(self, softmax_func=nn.LogSoftmax):
+    def __init__(self, softmax_func=nn.LogSoftmax, teacher=False):
         super(ScoresCalculator, self).__init__()
         self.softmax_func = softmax_func(dim=2)
+        self.teacher = teacher
         self.utterance_projection = nn.Sequential(
             nn.Linear(constant.hidden_size*2, constant.hidden_size), 
             nn.ReLU()
@@ -211,10 +248,15 @@ class ScoresCalculator(nn.Module):
         utterance_projected = self.utterance_projection(utterance_concat)
         # [batch_size, max_conversation_length, hidden_size]
 
+        # scores = torch.matmul(utterance_repre.unsqueeze(2), state_matrix.permute(0,1,3,2)).squeeze(2)
         scores = torch.matmul(state_matrix, utterance_projected.unsqueeze(3)).squeeze()
+        # scores: [batch_size, max_conversation_length, 5]
         softmax_masked_scores = self.softmax_func(scores)
-
-        return softmax_masked_scores
+        if self.teacher:
+            log_softmax_scores = nn.LogSoftmax(dim=2)(scores)
+            return softmax_masked_scores, log_softmax_scores
+        else:
+            return softmax_masked_scores
 
 
 

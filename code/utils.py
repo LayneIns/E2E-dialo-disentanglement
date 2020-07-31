@@ -110,7 +110,7 @@ def padding_batch(utterances_num, labels, max_session_length, max_utterance_leng
         
         session_length_count = dict(Counter(labels[i]))
         # matrix_padding_part = []
-        for j in range(4):
+        for j in range(constant.state_num-1):
             padding_num_j = max_session_length - session_length_count.get(j, 0)
             for _ in range(padding_num_j):
                 empty_mat = [constant.PAD_ID] * max_utterance_length
@@ -130,11 +130,11 @@ def build_state_transition_matrix(labels, max_conversation_length):
     matrix = []
     for i in range(batch_size):
         one_instance_label = labels[i]
-        state = (np.zeros([max_conversation_length, 5], dtype=np.int)-1).tolist()
-        label_dict = {0:0, 1:0, 2:0, 3:0}
+        state = (np.zeros([max_conversation_length, constant.state_num], dtype=np.int)-1).tolist()
+        label_dict = {i:0 for i in range(constant.state_num-1)}
         for j in range(len(one_instance_label)):
             state[j][0] = 0
-            for k in range(4):
+            for k in range(constant.state_num-1):
                 if label_dict[k] != 0:
                     state[j][k+1] = label_dict[k]
             label_dict[one_instance_label[j]] += 1
@@ -146,7 +146,7 @@ def build_state_transition_matrix(labels, max_conversation_length):
 def get_session_sequence_length(labels):
     session_sequence_length = []
     for item in labels:
-        one_length = [0, 0, 0, 0]
+        one_length = [0] * (constant.state_num - 1)
         for one_label in item:
             one_length[one_label] += 1
         session_sequence_length.append(one_length)
@@ -160,7 +160,7 @@ def reorder_session(labels):
     cnt = 0
     batch_size, max_conversation_length = labels.shape
     for batch_index in range(batch_size):
-        for j in range(4):
+        for j in range(constant.state_num):
             for i in range(len(labels[batch_index])):
                 if labels[batch_index][i] == j:
                     reverse_dict[cnt] = batch_index*max_conversation_length+i
@@ -195,7 +195,7 @@ def get_loss_labels(new_labels):
 def add_noise_to_data(labels):
     noise_labels = []
     for batch_index in range(len(labels)):
-        if random.random() < 0.3:
+        if random.random() < constant.total_noise_ratio:
             one_label = []
             index = [i for i in range(len(labels[batch_index]))]
             random.shuffle(index)
@@ -204,7 +204,7 @@ def add_noise_to_data(labels):
                 if j not in index:
                     one_label.append(labels[batch_index][j])
                 else:
-                    candidate_set = list(set([i for i in range(1,4)]) -  set([labels[batch_index][j]]))
+                    candidate_set = list(set([i for i in range(1,constant.state_num-1)]) -  set([labels[batch_index][j]]))
                     one_label.append(random.choice(candidate_set))
             noise_labels.append(one_label)
         else:
@@ -328,6 +328,5 @@ def compare(predicted_labels, truth_labels, metric):
         for y_true, y_pred in zip(truth_labels, predicted_labels):
             f_scores.append(calculate_shen_f_score(y_true, y_pred))
         return sum(f_scores)/len(f_scores)
-
 
 

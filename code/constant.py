@@ -1,15 +1,17 @@
 seed = 5
 utterance_max_length = 40
+state_num = 15
 
 PAD_ID = 0
 UNK_ID = 1
 
 epoch_num = 15
-inference_step = 1500
+inference_step = 90
 embedding_size = 300
 hidden_size = 300
 batch_size = 16
 learning_rate = 5e-4
+total_noise_ratio = 0.2
 noise_ratio = 0.05
 
 save_input_path = "./input_saving/"
