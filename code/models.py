@@ -79,7 +79,6 @@ class UtteranceEncoder(nn.Module):
         input_var = input_var.view(-1, shape[2])
         input_lens = input_lens.reshape(-1)
         embeded_input = self.word_emb_matrix(input_var)
-        # embeded_input = self.input_dropout(embeded_input)
         word_output, _ = self.encoder(embeded_input)
         # word_output: [batch_size * max_conversation_length, max_utterance_length, hidden_size]
         if self.bidirectional:
@@ -248,7 +247,6 @@ class ScoresCalculator(nn.Module):
         utterance_projected = self.utterance_projection(utterance_concat)
         # [batch_size, max_conversation_length, hidden_size]
 
-        # scores = torch.matmul(utterance_repre.unsqueeze(2), state_matrix.permute(0,1,3,2)).squeeze(2)
         scores = torch.matmul(state_matrix, utterance_projected.unsqueeze(3)).squeeze()
         # scores: [batch_size, max_conversation_length, 5]
         softmax_masked_scores = self.softmax_func(scores)

@@ -161,7 +161,6 @@ class SupervisedTrainer(object):
         masked_scores = scores + mask*10000
         softmax_masked_scores = nn.Softmax(dim=0)(masked_scores)
         label = softmax_masked_scores.topk(2)[1].cpu().numpy()
-        # print(label)
         if label[0] == 0 and -1. not in mask:
             ret_label = label[1]
         else:
@@ -195,7 +194,6 @@ class SupervisedTrainer(object):
             else:
                 mask = [0.] + [-1.] * (constant.state_num-1)
                 mask = torch.LongTensor(mask).type(torch.double)
-            # hidden_state_history = {1: None, 2: None, 3:None, 4: None}
             hidden_state_history = {i + 1: None for i in range(constant.state_num-1)}
             for j in range(conversation_length_list[batch_index]):
                 state, mask, hidden_state_history = self.init_state(batch_index, j, state, hidden_state_history, utterance_repre, conversation_repre, predicted_batch_label, mask)
