@@ -26,10 +26,10 @@ def make_all_dirs(current_time):
         os.makedirs(os.path.join(constant.save_model_path, 'model_'+current_time))
 
 
-def save_predicted_results(predicted_labels, truth_labels, current_time, test_step):
+def save_predicted_results(predicted_labels, truth_labels, current_time, test_step, mode='dev'):
     filepath = os.path.join(constant.output_path, 'result_'+current_time)
-    predicted_filename = os.path.join(filepath, 'predicted_step_{}.pkl'.format(test_step))
-    truth_filename = os.path.join(filepath, 'truth.pkl')
+    predicted_filename = os.path.join(filepath, 'predicted_step_{}.pkl'.format(test_step) if mode == 'dev' else 'test_predicted_step_{}.pkl'.format(test_step))
+    truth_filename = os.path.join(filepath, 'truth.pkl' if mode == 'dev' else 'truth_test.pkl')
     if not os.path.exists(truth_filename):
         with open(truth_filename, 'wb') as fout:
             pickle.dump(truth_labels, fout)

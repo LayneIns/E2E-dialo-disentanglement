@@ -45,7 +45,7 @@ def build_word_dict(all_utterances):
                     word_cnt[word] = 0
                 word_cnt[word] += 1
     for key, val in word_cnt.items():
-       if val > 6:
+       if val > 10:
             word_dict[key] = len(word_dict)
 
     print("{} words in total and {} words in the dictionary".format(len(word_cnt), len(word_dict)))
@@ -68,6 +68,13 @@ def read_data(load_var=False, input_=None, mode='train'):
         labels = utils.save_or_read_input(os.path.join(constant.save_input_path, "{}_labels.pk".format(mode)))
         word_dict = utils.save_or_read_input(os.path.join(constant.save_input_path, "word_dict.pk"))
     else:
-        all_utterances, labels, word_dict = read_raw_data(input_, mode)
+        if mode == 'train':
+            all_utterances, labels, word_dict = read_raw_data(input_, mode)
+        else:
+            all_utterances, labels, _ = read_raw_data(input_, mode)
+            if mode == 'dev':
+                word_dict = None
+            else:
+                word_dict = utils.save_or_read_input(os.path.join(constant.save_input_path, "word_dict.pk"))
     return all_utterances, labels, word_dict
 

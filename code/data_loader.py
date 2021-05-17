@@ -9,11 +9,11 @@ import constant
 
 
 class TrainDataLoader(object):
-    def __init__(self, all_utterances, labels, word_dict, name='train', add_noise=False):
-        self.all_utterances_batch = [all_utterances[i:i+constant.batch_size] \
-                                    for i in range(0, len(all_utterances), constant.batch_size)]
-        self.labels_batch = [labels[i:i+constant.batch_size] \
-                            for i in range(0, len(labels), constant.batch_size)]
+    def __init__(self, all_utterances, labels, word_dict, name='train', add_noise=False, batch_size=constant.batch_size):
+        self.all_utterances_batch = [all_utterances[i:i+batch_size] \
+                                    for i in range(0, len(all_utterances), batch_size)]
+        self.labels_batch = [labels[i:i+batch_size] \
+                            for i in range(0, len(labels), batch_size)]
         self.word_dict = word_dict
         self.add_noise = add_noise
         assert len(self.all_utterances_batch) == len(self.labels_batch)
@@ -43,7 +43,6 @@ class TrainDataLoader(object):
         loss_mask = self.convert_to_tensors_2(loss_mask, batch_size, max_length_1)
         batch_size, max_length_1 = new_utterance_sequence_length.shape
         new_utterance_sequence_length = self.convert_to_tensors_2(new_utterance_sequence_length, batch_size, max_length_1)
-        
         return new_utterance_num_numpy, label_for_loss, new_labels, new_utterance_sequence_length, \
                     session_transpose_matrix, state_transition_matrix, session_sequence_length, \
                         max_conversation_length, loss_mask

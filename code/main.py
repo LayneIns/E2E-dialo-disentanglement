@@ -8,6 +8,7 @@ import logging
 import ast
 from time import strftime, gmtime
 import pickle
+import re
 
 import utils
 from data_processing import read_data
@@ -40,7 +41,7 @@ def train(args):
                 input_=os.path.join(constant.data_path, "entangled_dev.json"), mode='dev')
             
     word_emb = build_embedding_matrix(word_dict, glove_loc=args.glove_loc, \
-                    emb_loc=os.path.join(constant.save_input_path, "word_emb.pk"), load_emb=True)
+                    emb_loc=os.path.join(constant.save_input_path, "word_emb.pk"), load_emb=False)
     
     if args.save_input:
         utils.save_or_read_input(os.path.join(constant.save_input_path, "train_utterances.pk"), \
@@ -100,34 +101,36 @@ def test(args):
         test_utterances, test_labels, word_dict = read_data(load_var=args.load_var, input_=None, mode='test')
     else:
         test_utterances, test_labels, word_dict = read_data(load_var=args.load_var, \
-                input_=os.path.join(constant.data_path, "entangled_test.json"), mode='test')
+                input_=os.path.join(constant.data_path, "entangled_{}.json".format(args.mode)), mode='test')
     
     if args.save_input:
-        utils.save_or_read_input(os.path.join(constant.save_input_path, "test_utterances.pk"), \
+        utils.save_or_read_input(os.path.join(constant.save_input_path, "{}_utterances.pk".format(args.mode)), \
                                     rw='w', input_obj=test_utterances)
-        utils.save_or_read_input(os.path.join(constant.save_input_path, "test_labels.pk"), \
+        utils.save_or_read_input(os.path.join(constant.save_input_path, "{}_labels.pk".format(args.mode)), \
                                     rw='w', input_obj=test_labels)
+    
+    current_time = re.findall('.*model_(.+?)/.*', args.model_path)[0]
+    step_cnt = re.findall('.step_(.+?)\.pkl', args.model_path)[0]
 
-    test_dataloader = TrainDataLoader(test_utterances, test_labels, word_dict, name='test')
+    test_dataloader = TrainDataLoader(test_utterances, test_labels, word_dict, name='test', batch_size=4)
     
     ensemble_model = EnsembleModel(word_dict, word_emb=None, bidirectional=False)
     if torch.cuda.is_available():
         ensemble_model.cuda()
 
-    supervised_trainer = SupervisedTrainer(args, ensemble_model)
+    supervised_trainer = SupervisedTrainer(args, ensemble_model, current_time=current_time)
     
-    supervised_trainer.test(test_dataloader, args.model_path)
+    supervised_trainer.test(test_dataloader, args.model_path, step_cnt=step_cnt)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', type=str, default='train')
-    parser.add_argument('--model', type=str, default='', \
+    parser.add_argument('--model', type=str, default='S', \
                             help="'T' for teacher training, 'S' for single model training,'TS' for teacher-student training")
     parser.add_argument('--add_noise', type=ast.literal_eval, default=False)
-    parser.add_argument('--input_path', type=str, default=None)
-    parser.add_argument('--save_input', type=ast.literal_eval, default=False)
-    parser.add_argument('--load_var', type=ast.literal_eval, default=False)
+    parser.add_argument("--save_input", action='store_true')
+    parser.add_argument("--load_var", action='store_true')
     parser.add_argument('--glove_loc', type=str, default=constant.glove_path)
     parser.add_argument('--model_path', type=str, default='')
     parser.add_argument('--device', type=str, default='0')
@@ -137,7 +140,7 @@ if __name__ == "__main__":
 
     if args.mode == 'train':
         train(args)
-    elif args.mode == 'test':
+    elif args.mode == 'test' or args.mode == 'dev':
         test(args)
     else:
         raise ValueError('Mode Error')

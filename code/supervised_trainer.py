@@ -87,9 +87,9 @@ class SupervisedTrainer(object):
 
     def train(self, train_loader, noise_train_loader, dev_loader):
         step_cnt = 0
-        for epoch in range(constant.epoch_num):
+        for epoch in tqdm(range(constant.epoch_num)):
             epoch_loss = 0
-            for i, batch in enumerate(train_loader):
+            for i, batch in enumerate(tqdm(train_loader)):
                 step_cnt += 1
                 if self.args.add_noise:
                     noise_batch = noise_train_loader[i]
@@ -233,7 +233,7 @@ class SupervisedTrainer(object):
         return purity_score, nmi_score, ari_score, shen_f_score
 
 
-    def test(self, test_loader, model_path):
+    def test(self, test_loader, model_path, step_cnt):
         print("Loading model...")
         self.ensemble_model.load_state_dict(torch.load(model_path))
 
@@ -254,6 +254,8 @@ class SupervisedTrainer(object):
                 for j in range(len(conversation_length_list)):
                     truth_labels.append(labels[j][:conversation_length_list[j]].tolist())
         assert len(predicted_labels) == len(truth_labels)
+
+        utils.save_predicted_results(predicted_labels, truth_labels, self.current_time, step_cnt, mode='test')
 
         purity_score = utils.compare(predicted_labels, truth_labels, 'purity')
         nmi_score = utils.compare(predicted_labels, truth_labels, 'NMI')

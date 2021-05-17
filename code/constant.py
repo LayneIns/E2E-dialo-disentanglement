@@ -1,12 +1,12 @@
 seed = 5
-utterance_max_length = 40
-state_num = 15
+utterance_max_length = 60
+state_num = 6
 
 PAD_ID = 0
 UNK_ID = 1
 
-epoch_num = 15
-inference_step = 90
+epoch_num = 7
+inference_step = 600
 embedding_size = 300
 hidden_size = 300
 batch_size = 16
@@ -19,4 +19,4 @@ log_path = "./log/"
 output_path = "./output/"
 save_model_path = "./saved_models/"
 glove_path = "../glove/glove.840B.300d.txt"
-data_path = "../data/"
+data_path = "../dataset/"
