@@ -20,11 +20,11 @@ Before you run the code, you have to specify some hyperparameters and some file 
 
 You can train the model by the following command:
 
-	python main.py --mode train --input_path [path of the data] --device [cpu or gpu index]
+	python main.py --mode train --model S --device [cpu or gpu index]
 
 After training the model, the test command is:
 
-	python main.py --mode test --input_path [path of the data] --model_path [path to the model you want to test] --device [cpu or gpu index]
+	python main.py --mode test --model S --model_path [path to the model you want to test] --device [cpu or gpu index]
 
 ## Reference
 
